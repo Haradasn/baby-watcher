@@ -1,0 +1,25 @@
+# secrets
+config.sh
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# 著作権のある商品写真(スイッチサイエンス/Amazon/秋月/Adafruit等から取得したもの)は
+# リポジトリに含めない。自分で撮影した写真・自作の図のみバージョン管理する。
+images/amp.jpg
+images/camera.jpg
+images/cooler.jpg
+images/csicable.jpg
+images/gc9a01.jpg
+images/jumper.jpg
+images/pca9685.jpg
+images/pi5.jpg
+images/psu.jpg
+images/servocable.jpg
+images/sg90.jpg
+images/speaker.jpg

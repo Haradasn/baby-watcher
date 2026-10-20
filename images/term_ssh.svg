@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" font-family="'SF Mono', 'Menlo', 'Courier New', monospace">
+  <defs>
+    <clipPath id="round"><rect x="0" y="0" width="900" height="420" rx="10"/></clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="900" height="420" fill="#1e1e2e"/>
+    <rect width="900" height="32" fill="#2a2a3c"/>
+    <circle cx="20" cy="16" r="6" fill="#ff5f57"/>
+    <circle cx="40" cy="16" r="6" fill="#febc2e"/>
+    <circle cx="60" cy="16" r="6" fill="#28c840"/>
+    <text x="450" y="21" text-anchor="middle" font-size="12" fill="#9399b2">you@MacBook — ssh</text>
+
+    <text x="18" y="60" font-size="13" fill="#a6e3a1">you@MacBook</text><text x="150" y="60" font-size="13" fill="#cdd6f4">:~/repo/baby-watcher$ ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -C "babywatcher-setup"</text>
+    <text x="18" y="82" font-size="13" fill="#cdd6f4">Generating public/private ed25519 key pair.</text>
+    <text x="18" y="100" font-size="13" fill="#cdd6f4">Your identification has been saved in /Users/you/.ssh/id_ed25519</text>
+    <text x="18" y="118" font-size="13" fill="#cdd6f4">Your public key has been saved in /Users/you/.ssh/id_ed25519.pub</text>
+    <text x="18" y="136" font-size="13" fill="#9399b2">The key fingerprint is: SHA256:8wvpukCpCjHT4Ys4RcHiPTG/pqYEI0Beg0q0rj3eOYg</text>
+
+    <text x="18" y="168" font-size="13" fill="#a6e3a1">you@MacBook</text><text x="150" y="168" font-size="13" fill="#cdd6f4">:~$ ssh-copy-id you@babywatcher.local</text>
+    <text x="18" y="190" font-size="13" fill="#9399b2">you@babywatcher.local's password: ********</text>
+    <text x="18" y="208" font-size="13" fill="#cdd6f4">Number of key(s) added: 1</text>
+
+    <text x="18" y="240" font-size="13" fill="#a6e3a1">you@MacBook</text><text x="150" y="240" font-size="13" fill="#cdd6f4">:~$ ssh you@babywatcher.local "hostname &amp;&amp; whoami &amp;&amp; uname -a"</text>
+    <text x="18" y="262" font-size="13" fill="#f9e2af">babywatcher</text>
+    <text x="18" y="280" font-size="13" fill="#f9e2af">you</text>
+    <text x="18" y="298" font-size="13" fill="#f9e2af">Linux babywatcher 6.18.50+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1 (2026-09-11) aarch64 GNU/Linux</text>
+
+    <text x="18" y="330" font-size="13" fill="#a6e3a1">you@MacBook</text><text x="150" y="330" font-size="13" fill="#cdd6f4">:~$ ssh you@babywatcher.local "sudo -n true &amp;&amp; echo NOPASSWD_OK"</text>
+    <text x="18" y="352" font-size="13" fill="#89dceb">NOPASSWD_OK</text>
+
+    <text x="18" y="384" font-size="13" fill="#a6e3a1">you@MacBook</text><text x="150" y="384" font-size="13" fill="#cdd6f4">:~$ _</text>
+  </g>
+</svg>
