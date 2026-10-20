@@ -13,6 +13,8 @@ private: true
 
 [前回](./qiita_draft.md)でアーキテクチャが確定したので、今回は実際に部品を発注し、届いたところからRaspberry Pi 5の初期セットアップと、唯一半田付けが必要なパーツの下準備までを進めます。
 
+コードはGitHubで公開しています → [Haradasn/baby-watcher](https://github.com/Haradasn/baby-watcher)
+
 # 部品到着
 
 まずRaspberry Pi 5本体・カメラ・電源・MAX98357A(アンプ)・ジャンパーワイヤーが届きました。
