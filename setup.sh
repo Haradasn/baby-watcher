@@ -8,7 +8,9 @@ pip install --upgrade pip -q
 pip install -q anthropic opencv-python-headless requests pillow
 # Raspberry Pi本体では以下も必要(開発機ではハードウェアが無くても動きます):
 #   pip install adafruit-circuitpython-servokit adafruit-circuitpython-rgb-display
-#   Piper TTSは別途導入: https://github.com/OHF-Voice/piper1-gpl
+#   pip install 'piper-tts[ja]'  # 日本語音声合成(OpenJTalk同梱)
+#   日本語音声モデルを ~/piper/ja_JP-voice.onnx (+.onnx.json) に配置
+#   例: https://huggingface.co/rhasspy/piper-voices/tree/main/ja/ja_JP/hi_fi_captain/medium
 if [ ! -f config.sh ]; then
   TOPIC="baby-$(openssl rand -hex 6)"
   cat > config.sh <<CFG

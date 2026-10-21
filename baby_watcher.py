@@ -3,7 +3,7 @@ baby_watcher.py — 動きを検知した時だけ画像をLLMに見せて、状
 
 構成:  カメラ(首振り台) → 動き検知(ローカル) → Claude API(画像を読む)
        → 表情(GC9A01) + 音声(Piper TTS) + 首振り(PCA9685/SG90) + ntfyでスマホ通知
-画像はメモリ上でだけ扱い、ディスクには保存しません。
+画像はデフォルトではメモリ上でだけ扱い、ディスクには保存しません(--save-framesで明示的に有効化した場合のみ保存)。
 
 ※ 見守りの補助です。赤ちゃんの安全確認の代わりにはなりません。
 ※ ぬいぐるみには埋め込まず、ベビーベッドのそばの棚などに据え置いて使う想定です。
@@ -50,21 +50,14 @@ MAMA_HINT = os.environ.get("MAMA_HINT", "")
 
 
 def _build_system_prompt():
-    if PAPA_HINT and MAMA_HINT:
-        person_section = f"""人物の呼び方:
-- {PAPA_HINT} → 「パパ」と呼ぶ
-- {MAMA_HINT} → 「ママ」と呼ぶ
-- どちらか判別できない大人 → 「大人の人」と呼ぶ"""
-    elif PAPA_HINT:
-        person_section = f"""人物の呼び方:
-- {PAPA_HINT} → 「パパ」と呼ぶ
-- それ以外の大人 → 「大人の人」と呼ぶ"""
-    elif MAMA_HINT:
-        person_section = f"""人物の呼び方:
-- {MAMA_HINT} → 「ママ」と呼ぶ
-- それ以外の大人 → 「大人の人」と呼ぶ"""
-    else:
-        person_section = "人物の呼び方:\n- 大人は「大人の人」と呼ぶ"
+    person_section = """人物の呼び方:
+- 見た目が男性の大人 → 「パパ」と呼ぶ
+- 見た目が女性の大人 → 「ママ」と呼ぶ
+- 性別が判別できない場合 → 「大人の人」と呼ぶ"""
+    if PAPA_HINT:
+        person_section += f"\n- ただし次の特徴の人物は性別によらず「パパ」優先: {PAPA_HINT}"
+    if MAMA_HINT:
+        person_section += f"\n- ただし次の特徴の人物は性別によらず「ママ」優先: {MAMA_HINT}"
 
     return f"""あなたは赤ちゃんに語りかけるナレーターです。
 寝室カメラの静止画を見て、赤ちゃんに周りの様子をやさしく伝えてください。
@@ -72,7 +65,18 @@ def _build_system_prompt():
 
 {person_section}
 
-伝える例: パパがそばにいるよ、ママがミルクを作っているよ、赤ちゃんがモゾモゾしているね、お部屋が暗くなったね
+観察のポイント: 「人がいる」だけで終わらせず、画像の中の具体的な手がかりを最低1つ拾ってください。
+- 人の動作(抱っこしている、スマホを見ている、しゃがんでいる、こちらを向いているなど)
+- 身につけているもの・持っているもの(服の色、メガネ、哺乳瓶、タオル、おもちゃなど)
+- 部屋の変化(カーテン、照明、時計、窓の外の明るさ、床に落ちている物など)
+- 赤ちゃん自身の様子(向き、手足の動き、表情)
+同じような場面でも、毎回違う手がかりに注目して言い回しを変えてください。決まり文句の使い回しは避けること。
+
+伝える例:
+- 青いシャツの大人の人が、抱っこしようとしてるよ
+- 大人の人がスマホを見ながらそばにいるね
+- カーテンが開いて、お部屋が明るくなったよ
+- 赤ちゃんの足がぴょこぴょこ動いてるね
 伝えない例: 何も変化がない、カメラのノイズだけ
 
 notifyの判断: 赤ちゃんに何か伝えられることがあればtrue。伝えることが特になければfalse。
@@ -125,15 +129,25 @@ def motion_info(prev_gray, gray):
     return ratio, dx, dy
 
 
-def to_jpeg_b64(frame):
+def to_jpeg_bytes(frame):
     h, w = frame.shape[:2]
     if w > IMAGE_WIDTH:
         frame = cv2.resize(frame, (IMAGE_WIDTH, int(h * IMAGE_WIDTH / w)))
     ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-    return base64.b64encode(buf.tobytes()).decode()
+    return buf.tobytes()
 
 
-def ask_llm(client, frame):
+def save_debug_frame(save_dir, jpeg_bytes):
+    os.makedirs(save_dir, exist_ok=True)
+    path = os.path.join(save_dir, f"{datetime.now():%Y%m%d_%H%M%S_%f}.jpg")
+    with open(path, "wb") as f:
+        f.write(jpeg_bytes)
+
+
+def ask_llm(client, frame, save_dir=None):
+    jpeg_bytes = to_jpeg_bytes(frame)
+    if save_dir:
+        save_debug_frame(save_dir, jpeg_bytes)
     res = client.messages.create(
         model=MODEL,
         max_tokens=1024,
@@ -143,7 +157,7 @@ def ask_llm(client, frame):
             "content": [
                 {"type": "image", "source": {
                     "type": "base64", "media_type": "image/jpeg",
-                    "data": to_jpeg_b64(frame)}},
+                    "data": base64.b64encode(jpeg_bytes).decode()}},
                 {"type": "text", "text": f"現在時刻 {datetime.now():%H:%M}。判断してください。"},
             ],
         }],
@@ -174,12 +188,12 @@ def in_quiet_hours():
     return _in_hours(QUIET_HOURS)
 
 
-def react_and_speak(client, frame, dx, dy, topic, now, last_notify, dry_run):
+def react_and_speak(client, frame, dx, dy, topic, now, last_notify, dry_run, save_dir=None):
     """動きを検知した時の一連の反応: 首を向ける→判定→表情/発話/通知"""
     neck.react_toward(dx, dy)
 
     try:
-        result = ask_llm(client, frame)
+        result = ask_llm(client, frame, save_dir=save_dir)
     except Exception as e:
         print(f"[{datetime.now():%H:%M:%S}] LLMエラー: {e}")
         neck.center()
@@ -231,6 +245,8 @@ def main():
     parser.add_argument("--picam", action="store_true", help="Raspberry Pi カメラを使う")
     parser.add_argument("--dry-run", action="store_true", help="通知せず結果を表示だけする")
     parser.add_argument("--no-neck", action="store_true", help="首振り巡回をせず正面固定で動かす(検証用)")
+    parser.add_argument("--save-frames", metavar="DIR", default=None,
+                         help="LLMに送った画像を指定ディレクトリに保存する(確認用。デフォルトは保存しない)")
     args = parser.parse_args()
 
     topic = os.environ.get("NTFY_TOPIC")
@@ -283,7 +299,8 @@ def main():
                 and now - last_llm >= MIN_LLM_INTERVAL):
             last_llm = now
             last_notify = react_and_speak(
-                client, frame, dx, dy, topic, now, last_notify, args.dry_run)
+                client, frame, dx, dy, topic, now, last_notify, args.dry_run,
+                save_dir=args.save_frames)
             last_move = time.time()  # 反応後は巡回タイマーをリセット
 
         time.sleep(0.5)

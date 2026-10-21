@@ -2,6 +2,9 @@
 export ANTHROPIC_API_KEY="sk-ant-ここに貼る"
 # スマホのntfyアプリでこのトピック名を購読してください
 export NTFY_TOPIC="好きな長くてランダムな文字列"
+
 # パパ・ママの見た目の特徴（未設定なら「大人の人」と表現します）
 # export PAPA_HINT="メガネをかけている男性"
 # export MAMA_HINT="髪が長い女性"
+# TTSの音量（0.0〜1.0、赤ちゃんのそばに置くので小さめ推奨）
+export VOICE_VOLUME="0.1"
