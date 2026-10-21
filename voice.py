@@ -10,8 +10,9 @@ import subprocess
 import tempfile
 import wave
 
-PIPER_BIN = os.environ.get("PIPER_BIN", "piper")
 PIPER_MODEL = os.environ.get("PIPER_MODEL", os.path.expanduser("~/piper/ja_JP-voice.onnx"))
+VOICE_VOLUME = os.environ.get("VOICE_VOLUME", "0.1")
+AUDIO_DEVICE = os.environ.get("AUDIO_DEVICE", "plughw:CARD=MAX98357A,DEV=0")
 
 
 def _estimate_duration(text: str) -> float:
@@ -24,7 +25,12 @@ def synthesize(text: str) -> str | None:
     os.close(fd)
     try:
         subprocess.run(
-            [PIPER_BIN, "--model", PIPER_MODEL, "--output_file", path],
+            [
+                "python3", "-m", "piper",
+                "-m", PIPER_MODEL,
+                "-f", path,
+                "--volume", VOICE_VOLUME,
+            ],
             input=text.encode("utf-8"),
             check=True,
             capture_output=True,
@@ -43,7 +49,7 @@ def duration_of(wav_path: str) -> float:
 
 
 def play(wav_path: str):
-    subprocess.Popen(["aplay", "-q", wav_path])
+    subprocess.Popen(["aplay", "-q", "-D", AUDIO_DEVICE, wav_path])
 
 
 def speak(text: str) -> float:
