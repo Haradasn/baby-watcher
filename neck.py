@@ -4,10 +4,12 @@ neck.py — PCA9685経由でSG90サーボ2個(パン/チルト)を制御する
 ハードウェア未接続の環境(開発機など)でも import エラーにならないよう、
 adafruit-circuitpython-servokit が無ければソフトウェア的に no-op で動く。
 """
+
 import time
 
 try:
     from adafruit_servokit import ServoKit
+
     _kit = ServoKit(channels=16)
     HAS_HW = True
 except Exception:
@@ -23,10 +25,10 @@ TILT_RANGE = (60, 120)
 
 # 自律巡回で順番に見るプリセット位置 (pan, tilt)
 SCAN_POSITIONS = [
-    (90, 90),   # 正面
-    (60, 95),   # 左
+    (90, 90),  # 正面
+    (60, 95),  # 左
     (120, 95),  # 右
-    (90, 75),   # うつむき
+    (90, 75),  # うつむき
 ]
 
 SETTLE_SEC = 0.4  # 動かした後、静止するまで待つ時間(この間は動き検知を止める)

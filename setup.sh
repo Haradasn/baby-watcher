@@ -6,6 +6,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip -q
 pip install -q anthropic opencv-python-headless requests pillow
+pip install -q ruff pytest  # 開発用(整形・テスト。Pi本体では不要)
 # Raspberry Pi本体では以下も必要(開発機ではハードウェアが無くても動きます):
 #   pip install adafruit-circuitpython-servokit adafruit-circuitpython-rgb-display
 #   pip install 'piper-tts[ja]'  # 日本語音声合成(OpenJTalk同梱)

@@ -27,23 +27,23 @@ import os
 import time
 from datetime import datetime
 
+import anthropic
 import cv2
 import requests
-import anthropic
 
 import face
 import neck
 import voice
 
 # ===== 調整用パラメータ =====
-MODEL = "claude-haiku-5-5"      # 安くて速いモデル。精度が足りなければ claude-sonnet-5-5
-MOTION_THRESHOLD = 0.005        # 画面の何割が変化したら「動いた」とみなすか (0.5%)
-MIN_LLM_INTERVAL = 30           # LLMに送る最短間隔(秒)。API代の節約
-MIN_NOTIFY_INTERVAL = 30        # 通知の最短間隔(秒)。語りかけ用途のため短め
-IMAGE_WIDTH = 640               # 送る画像の幅。小さいほど安く、送る情報も減る
-ACTIVE_HOURS = None             # 例: (20, 7) で 20時〜翌7時だけ動かす。None なら常時
-QUIET_HOURS = (21, 7)           # この時間帯は表情を消灯しTTSも喋らない(通知だけは送る)
-SCAN_DWELL = 8                  # 自律巡回で1つのプリセット位置に留まる秒数
+MODEL = "claude-haiku-5-5"  # 安くて速いモデル。精度が足りなければ claude-sonnet-5-5
+MOTION_THRESHOLD = 0.005  # 画面の何割が変化したら「動いた」とみなすか (0.5%)
+MIN_LLM_INTERVAL = 30  # LLMに送る最短間隔(秒)。API代の節約
+MIN_NOTIFY_INTERVAL = 30  # 通知の最短間隔(秒)。語りかけ用途のため短め
+IMAGE_WIDTH = 640  # 送る画像の幅。小さいほど安く、送る情報も減る
+ACTIVE_HOURS = None  # 例: (20, 7) で 20時〜翌7時だけ動かす。None なら常時
+QUIET_HOURS = (21, 7)  # この時間帯は表情を消灯しTTSも喋らない(通知だけは送る)
+SCAN_DWELL = 8  # 自律巡回で1つのプリセット位置に留まる秒数
 
 PAPA_HINT = os.environ.get("PAPA_HINT", "")
 MAMA_HINT = os.environ.get("MAMA_HINT", "")
@@ -93,9 +93,11 @@ SYSTEM_PROMPT = _build_system_prompt()
 def open_camera(use_picam: bool):
     if use_picam:
         from picamera2 import Picamera2
+
         cam = Picamera2()
-        cam.configure(cam.create_preview_configuration(
-            main={"size": (1280, 720), "format": "RGB888"}))
+        cam.configure(
+            cam.create_preview_configuration(main={"size": (1280, 720), "format": "RGB888"})
+        )
         cam.start()
         time.sleep(2)
         return lambda: cam.capture_array()
@@ -106,6 +108,7 @@ def open_camera(use_picam: bool):
     def read():
         ok, frame = cap.read()
         return frame if ok else None
+
     return read
 
 
@@ -152,24 +155,33 @@ def ask_llm(client, frame, save_dir=None):
         model=MODEL,
         max_tokens=1024,
         system=SYSTEM_PROMPT,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {
-                    "type": "base64", "media_type": "image/jpeg",
-                    "data": base64.b64encode(jpeg_bytes).decode()}},
-                {"type": "text", "text": f"現在時刻 {datetime.now():%H:%M}。判断してください。"},
-            ],
-        }],
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": base64.b64encode(jpeg_bytes).decode(),
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": f"現在時刻 {datetime.now():%H:%M}。判断してください。",
+                    },
+                ],
+            }
+        ],
     )
     text = next(b.text for b in res.content if b.type == "text").strip()
     start, end = text.find("{"), text.rfind("}")
-    return json.loads(text[start:end + 1])
+    return json.loads(text[start : end + 1])
 
 
 def notify(topic, message):
-    requests.post(f"https://ntfy.sh/{topic}",
-                  data=message.encode("utf-8"), timeout=10)
+    requests.post(f"https://ntfy.sh/{topic}", data=message.encode("utf-8"), timeout=10)
 
 
 def _in_hours(hours):
@@ -244,9 +256,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--picam", action="store_true", help="Raspberry Pi カメラを使う")
     parser.add_argument("--dry-run", action="store_true", help="通知せず結果を表示だけする")
-    parser.add_argument("--no-neck", action="store_true", help="首振り巡回をせず正面固定で動かす(検証用)")
-    parser.add_argument("--save-frames", metavar="DIR", default=None,
-                         help="LLMに送った画像を指定ディレクトリに保存する(確認用。デフォルトは保存しない)")
+    parser.add_argument(
+        "--no-neck", action="store_true", help="首振り巡回をせず正面固定で動かす(検証用)"
+    )
+    parser.add_argument(
+        "--save-frames",
+        metavar="DIR",
+        default=None,
+        help="LLMに送った画像を指定ディレクトリに保存する(確認用。デフォルトは保存しない)",
+    )
     args = parser.parse_args()
 
     topic = os.environ.get("NTFY_TOPIC")
@@ -258,9 +276,9 @@ def main():
     last_llm = last_notify = 0.0
     print("見守りを開始しました。Ctrl+C で終了")
     if neck.HAS_HW:
-        print(f"  首振りハードウェア: 有効")
+        print("  首振りハードウェア: 有効")
     else:
-        print(f"  首振りハードウェア: 未検出(ソフトウェアのみでシミュレート)")
+        print("  首振りハードウェア: 未検出(ソフトウェアのみでシミュレート)")
 
     baselines = {}
     scan_idx = 0
@@ -295,12 +313,19 @@ def main():
         baselines[pos] = gray  # 基準フレームは常に最新に更新(照明変化などに追従)
 
         now = time.time()
-        if (ratio >= MOTION_THRESHOLD and in_active_hours()
-                and now - last_llm >= MIN_LLM_INTERVAL):
+        if ratio >= MOTION_THRESHOLD and in_active_hours() and now - last_llm >= MIN_LLM_INTERVAL:
             last_llm = now
             last_notify = react_and_speak(
-                client, frame, dx, dy, topic, now, last_notify, args.dry_run,
-                save_dir=args.save_frames)
+                client,
+                frame,
+                dx,
+                dy,
+                topic,
+                now,
+                last_notify,
+                args.dry_run,
+                save_dir=args.save_frames,
+            )
             last_move = time.time()  # 反応後は巡回タイマーをリセット
 
         time.sleep(0.5)
