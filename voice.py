@@ -4,6 +4,7 @@ voice.py — Piper TTSでメッセージを音声合成し、スピーカーか�
 Piperが未インストールの環境(開発機など)でも動くよう、
 失敗したら再生をスキップしてテキスト長から推定した長さだけ返す。
 """
+
 import contextlib
 import os
 import subprocess
@@ -26,10 +27,15 @@ def synthesize(text: str) -> str | None:
     try:
         subprocess.run(
             [
-                "python3", "-m", "piper",
-                "-m", PIPER_MODEL,
-                "-f", path,
-                "--volume", VOICE_VOLUME,
+                "python3",
+                "-m",
+                "piper",
+                "-m",
+                PIPER_MODEL,
+                "-f",
+                path,
+                "--volume",
+                VOICE_VOLUME,
             ],
             input=text.encode("utf-8"),
             check=True,

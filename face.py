@@ -4,6 +4,7 @@ face.py — GC9A01丸型ディスプレイに表情(目・口)を描画する
 ハードウェア未接続の環境でも動くよう、ディスプレイ用ライブラリが
 無ければ画像生成だけ行い実機への出力はスキップする。
 """
+
 import time
 
 from PIL import Image, ImageDraw
@@ -30,11 +31,11 @@ EYE = (255, 255, 255)
 
 # 表情ごとのパラメータ(目の高さ倍率、口の開き具合の基準値)
 EMOTIONS = {
-    "neutral":   {"eye_h": 1.0},
-    "happy":     {"eye_h": 0.55},
+    "neutral": {"eye_h": 1.0},
+    "happy": {"eye_h": 0.55},
     "surprised": {"eye_h": 1.6},
-    "sleepy":    {"eye_h": 0.2},
-    "curious":   {"eye_h": 1.15},
+    "sleepy": {"eye_h": 0.2},
+    "curious": {"eye_h": 1.15},
 }
 
 _last_emotion = "neutral"
@@ -56,7 +57,8 @@ def _draw(emotion, mouth_open, dim):
     mw, mh = (50, 22) if mouth_open else (36, 6)
     d.ellipse(
         [120 - mw // 2, 165 - mh // 2, 120 + mw // 2, 165 + mh // 2],
-        outline=EYE, width=4,
+        outline=EYE,
+        width=4,
     )
 
     if dim:
