@@ -143,7 +143,7 @@
 <text x="770" y="246" font-size="10" fill="#ff9f45">DC  ← GPIO25 (pin22)</text>
 <text x="770" y="264" font-size="10" fill="#ff9f45">RST ← GPIO27 (pin13)</text>
 <text x="770" y="282" font-size="10" fill="#ff9f45">BL  ← GPIO12 (pin32, PWM輝度)</text>
-<rect x="760" y="322" width="230" height="172" fill="#102234" stroke="#c77dff" stroke-width="1.5"/>
+<rect x="760" y="322" width="230" height="190" fill="#102234" stroke="#c77dff" stroke-width="1.5"/>
 <text x="875.0" y="344" text-anchor="middle" font-size="13" font-weight="bold" fill="#c77dff">U2: PCA9685</text>
 <text x="875.0" y="360" text-anchor="middle" font-size="9.5" fill="#7fa8c9">16ch PWM DRIVER (I2C1)</text>
 <line x1="760" y1="370" x2="990" y2="370" stroke="#2a4a68"/>
@@ -153,6 +153,7 @@
 <text x="770" y="442" font-size="10" fill="#aaaaaa">GND ← 外部電源GND + Pi5 GND(共通)</text>
 <text x="770" y="460" font-size="10" fill="#e8eef5">CH0 → SG90 (パン 360°)</text>
 <text x="770" y="478" font-size="10" fill="#e8eef5">CH1 → SG90 (チルト 90°)</text>
+<text x="770" y="496" font-size="10" fill="#e8eef5">VCC ← 3V3 (pin17、U1と別ピン)</text>
 <rect x="760" y="518" width="230" height="136" fill="#102234" stroke="#4ade80" stroke-width="1.5"/>
 <text x="875.0" y="540" text-anchor="middle" font-size="13" font-weight="bold" fill="#4ade80">U3: MAX98357A</text>
 <text x="875.0" y="556" text-anchor="middle" font-size="9.5" fill="#7fa8c9">I2S CLASS-D AMP + SPEAKER</text>
