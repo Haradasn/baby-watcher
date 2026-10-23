@@ -13,13 +13,13 @@ try:
     import board
     import busio
     import digitalio
-    from adafruit_rgb_display import gc9a01
+    from adafruit_rgb_display import gc9a01a
 
     _spi = busio.SPI(clock=board.SCK, MOSI=board.MOSI)
     _cs = digitalio.DigitalInOut(board.CE0)
     _dc = digitalio.DigitalInOut(board.D25)
     _rst = digitalio.DigitalInOut(board.D27)
-    _disp = gc9a01.GC9A01(_spi, cs=_cs, dc=_dc, rst=_rst, width=240, height=240, rotation=0)
+    _disp = gc9a01a.GC9A01A(_spi, cs=_cs, dc=_dc, rst=_rst, width=240, height=240, rotation=0)
     HAS_HW = True
 except Exception:
     _disp = None
