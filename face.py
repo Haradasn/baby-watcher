@@ -26,40 +26,74 @@ except Exception:
     HAS_HW = False
 
 WIDTH = HEIGHT = 240
-BG = (8, 8, 12)
-EYE = (255, 255, 255)
+SCLERA = (255, 255, 255)
+IRIS = (101, 67, 40)  # 温かみのあるブラウン
+PUPIL = (35, 24, 18)
+SHINE = (255, 255, 255)
+CHEEK = (255, 150, 165)
+INK = (120, 80, 65)  # 線画(目・口のアウトライン)の色
 
-# 表情ごとのパラメータ(目の高さ倍率、口の開き具合の基準値)
+# 表情ごとのパラメータ:
+#   bg    背景色(表情でやさしく変える)
+#   eye   目の形("open"=虹彩付きの丸目, "closed_up"=^の笑い目, "closed_flat"=眠そうな目)
+#   scale 目の大きさ倍率
+#   mouth 口の形
 EMOTIONS = {
-    "neutral": {"eye_h": 1.0},
-    "happy": {"eye_h": 0.55},
-    "surprised": {"eye_h": 1.6},
-    "sleepy": {"eye_h": 0.2},
-    "curious": {"eye_h": 1.15},
+    "neutral": {"bg": (255, 243, 230), "eye": "open", "scale": 1.0, "mouth": "smile_s"},
+    "happy": {"bg": (255, 228, 196), "eye": "closed_up", "scale": 1.0, "mouth": "smile_l"},
+    "surprised": {"bg": (255, 250, 210), "eye": "open", "scale": 1.35, "mouth": "o"},
+    "sleepy": {"bg": (224, 224, 245), "eye": "closed_flat", "scale": 1.0, "mouth": "flat"},
+    "curious": {"bg": (218, 240, 255), "eye": "open", "scale": 1.1, "mouth": "smile_s"},
 }
 
 _last_emotion = "neutral"
 
 
+def _draw_eye(d, cx, cy, style, scale):
+    w = h = int(34 * scale)
+    if style == "open":
+        d.ellipse([cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2], fill=SCLERA)
+        iw = ih = int(w * 0.62)
+        d.ellipse([cx - iw // 2, cy - ih // 2, cx + iw // 2, cy + ih // 2], fill=IRIS)
+        pw = int(w * 0.3)
+        d.ellipse([cx - pw // 2, cy - pw // 2, cx + pw // 2, cy + pw // 2], fill=PUPIL)
+        sw = max(3, int(w * 0.16))
+        sx, sy = cx - iw // 4, cy - ih // 4
+        d.ellipse([sx - sw // 2, sy - sw // 2, sx + sw // 2, sy + sw // 2], fill=SHINE)
+    elif style == "closed_up":
+        # ^ の形の笑い目(円の上側だけ弧を描く)
+        d.arc([cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2], start=200, end=340, fill=INK, width=5)
+    else:  # closed_flat (眠そう)
+        d.line([cx - w // 2 + 3, cy - 2, cx + w // 2 - 3, cy + 5], fill=INK, width=5)
+
+
+def _draw_mouth(d, style, mouth_open):
+    cx, cy = 120, 168
+    if mouth_open:
+        d.ellipse([cx - 25, cy - 12, cx + 25, cy + 12], fill=INK)
+        return
+    if style == "o":
+        d.ellipse([cx - 16, cy - 10, cx + 16, cy + 10], outline=INK, width=4)
+    elif style == "flat":
+        d.line([cx - 14, cy, cx + 14, cy], fill=INK, width=4)
+    elif style == "smile_l":
+        d.arc([cx - 30, cy - 22, cx + 30, cy + 18], start=15, end=165, fill=INK, width=6)
+    else:  # smile_s
+        d.arc([cx - 20, cy - 12, cx + 20, cy + 14], start=20, end=160, fill=INK, width=5)
+
+
 def _draw(emotion, mouth_open, dim):
-    img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-    d = ImageDraw.Draw(img)
     p = EMOTIONS.get(emotion, EMOTIONS["neutral"])
+    img = Image.new("RGB", (WIDTH, HEIGHT), p["bg"])
+    d = ImageDraw.Draw(img)
 
-    eye_w = 26
-    eye_h = max(4, int(34 * p["eye_h"]))
-    for cx in (90, 150):
-        d.ellipse(
-            [cx - eye_w // 2, 110 - eye_h // 2, cx + eye_w // 2, 110 + eye_h // 2],
-            fill=EYE,
-        )
+    for cx in (88, 152):
+        _draw_eye(d, cx, 108, p["eye"], p["scale"])
 
-    mw, mh = (50, 22) if mouth_open else (36, 6)
-    d.ellipse(
-        [120 - mw // 2, 165 - mh // 2, 120 + mw // 2, 165 + mh // 2],
-        outline=EYE,
-        width=4,
-    )
+    for cx in (58, 182):  # ほっぺ
+        d.ellipse([cx - 15, 142 - 10, cx + 15, 142 + 10], fill=CHEEK)
+
+    _draw_mouth(d, p["mouth"], mouth_open)
 
     if dim:
         img = Image.eval(img, lambda x: x // 6)
