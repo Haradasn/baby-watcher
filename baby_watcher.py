@@ -44,6 +44,8 @@ IMAGE_WIDTH = 640  # 送る画像の幅。小さいほど安く、送る情報�
 ACTIVE_HOURS = None  # 例: (20, 7) で 20時〜翌7時だけ動かす。None なら常時
 QUIET_HOURS = (21, 7)  # この時間帯は表情を消灯しTTSも喋らない(通知だけは送る)
 SCAN_DWELL = 8  # 自律巡回で1つのプリセット位置に留まる秒数
+TRACK_LOSE_AFTER = 3.0  # 動きが見えなくなってからこの秒数で追跡をやめて正面に戻る
+TRACK_UPDATE_INTERVAL = 0.3  # 追跡中に首を振り直す最短間隔(秒)。短すぎるとサーボがガタつく
 
 # カメラを物理的に90度傾けて設置した場合(リボンケーブルの取り回しのためなど)、
 # ここでソフト的に補正する。0/90/180/270 のいずれか。値は env で上書き可能:
@@ -113,7 +115,15 @@ def open_camera(use_picam: bool):
 
         cam = Picamera2()
         cam.configure(
-            cam.create_preview_configuration(main={"size": (1280, 720), "format": "RGB888"})
+            cam.create_preview_configuration(
+                main={"size": (1280, 720), "format": "RGB888"},
+                # raw を明示しないと、センサーが自動選択する 1280x720 向けの
+                # 低解像度モードがセンサー中央の約66%だけを切り出したクロップ
+                # モードになり、実質ズームされた画角になってしまう。
+                # 2304x1296 のモードはセンサー全域を使うので、raw をこれに
+                # 固定してISPに縮小させることで広角のまま撮れる。
+                raw={"size": (2304, 1296)},
+            )
         )
         cam.start()
         time.sleep(2)
@@ -131,6 +141,48 @@ def open_camera(use_picam: bool):
 
 def to_gray(frame):
     return cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (21, 21), 0)
+
+
+# OpenCV 5ではHaar検出器(cv2.CascadeClassifier)が廃止されたため、代わりに
+# 公式モデル置き場(opencv_zoo)のYuNet(ONNX、同梱済み: models/face_detection_yunet.onnx)
+# を使う。検出器はフレームサイズが変わるたびに作り直すコストを避けるため使い回す。
+_FACE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "face_detection_yunet.onnx")
+_face_detector = None
+_face_detector_size = None
+
+
+def _get_face_detector(w, h):
+    global _face_detector, _face_detector_size
+    if _face_detector is None:
+        # score_threshold: デフォルト(0.9前後)は実際のカメラ画質だと厳しすぎて
+        # 検出漏れが多かったため、0.5まで緩めてある。
+        _face_detector = cv2.FaceDetectorYN_create(_FACE_MODEL_PATH, "", (w, h), score_threshold=0.5)
+        _face_detector_size = (w, h)
+    elif _face_detector_size != (w, h):
+        _face_detector.setInputSize((w, h))
+        _face_detector_size = (w, h)
+    return _face_detector
+
+
+def detect_face_offset(frame):
+    """顔が検出できれば、画面中心からのオフセット(dx, dy: -1.0〜1.0)を返す。
+    検出できなければNone。
+
+    動きの重心(motion_info)だけを首の向き先に使うと、カメラが机/棚の上など
+    大人より低い位置にあるとき、近くの人の手や胴体の動きに引っ張られて下ばかり
+    向いてしまう。顔が見えているならそちらを優先することで、ちゃんと「顔を見て
+    追いかける」動きに近づける。
+    """
+    h, w = frame.shape[:2]
+    detector = _get_face_detector(w, h)
+    _, faces = detector.detect(frame)
+    if faces is None or len(faces) == 0:
+        return None
+    fx, fy, fw, fh, *_ = max(faces, key=lambda f: f[2] * f[3])  # 一番大きい(=近い)顔を優先
+    cx, cy = fx + fw / 2, fy + fh / 2
+    dx = (cx - w / 2) / (w / 2)
+    dy = (cy - h / 2) / (h / 2)
+    return dx, dy
 
 
 def motion_info(prev_gray, gray):
@@ -217,15 +269,13 @@ def in_quiet_hours():
     return _in_hours(QUIET_HOURS)
 
 
-def react_and_speak(client, frame, dx, dy, topic, now, last_notify, dry_run, save_dir=None):
-    """動きを検知した時の一連の反応: 首を向ける→判定→表情/発話/通知"""
-    neck.react_toward(dx, dy)
-
+def react_and_speak(client, frame, topic, now, last_notify, dry_run, save_dir=None):
+    """動きを検知した時の判定→表情/発話/通知。首をどちらに向けるかはメインループ側が
+    毎フレーム判断して追跡するので、ここでは首は動かさない。"""
     try:
         result = ask_llm(client, frame, save_dir=save_dir)
     except Exception as e:
         print(f"[{datetime.now():%H:%M:%S}] LLMエラー: {e}")
-        neck.center()
         return last_notify
 
     emotion = result.get("emotion", "neutral")
@@ -252,8 +302,6 @@ def react_and_speak(client, frame, dx, dy, topic, now, last_notify, dry_run, sav
             wait = MIN_NOTIFY_INTERVAL - (now - last_notify)
             print(f"  → 間引き(あと{wait:.0f}秒は通知しません)")
 
-    time.sleep(1.0)
-    neck.center()
     if quiet:
         face.off()
     return last_notify
@@ -306,11 +354,20 @@ def main():
     last_move = time.time()
     # 各プリセット位置の基準フレームは、巡回しながら最初の1周で順次取得する
 
+    # 追跡状態: 動きが見えている間は首を振り続けて追いかけ、見失ったら正面に戻って
+    # 自律巡回を再開する。巡回中の基準フレームは位置ごとの辞書(baselines)で管理するが、
+    # 追跡中は首の角度が細かく変わり続けて同じ位置に戻らないので、別に単一の
+    # ローリング基準フレーム(track_gray, 直前フレームとの比較)を使う。
+    tracking = False
+    last_motion_time = 0.0
+    last_track_move = 0.0
+    track_gray = None
+
     while True:
         pos = neck.current_position()
 
-        # 巡回モード: 留まり時間が過ぎたら次の位置へ(--no-neckなら巡回しない)
-        if not args.no_neck and time.time() - last_move >= SCAN_DWELL:
+        # 巡回モード: 追跡中でなく、かつ留まり時間が過ぎたら次の位置へ(--no-neckなら巡回しない)
+        if not args.no_neck and not tracking and time.time() - last_move >= SCAN_DWELL:
             scan_idx, last_move = idle_scan_step(read, baselines, scan_idx, last_move)
             continue  # 移動直後のフレームは基準フレームとして使ったので今回は検知をスキップ
 
@@ -320,32 +377,58 @@ def main():
             continue
 
         gray = to_gray(frame)
-        prev_gray = baselines.get(pos)
+
+        if tracking:
+            prev_gray = track_gray
+            track_gray = gray
+        else:
+            prev_gray = baselines.get(pos)
+            baselines[pos] = gray  # 基準フレームは常に最新に更新(照明変化などに追従)
+
         if prev_gray is None:
-            baselines[pos] = gray
-            time.sleep(0.5)
+            time.sleep(0.3 if tracking else 0.5)
             continue
 
-        ratio, dx, dy = motion_info(prev_gray, gray)
-        baselines[pos] = gray  # 基準フレームは常に最新に更新(照明変化などに追従)
-
+        ratio, motion_dx, motion_dy = motion_info(prev_gray, gray)
         now = time.time()
-        if ratio >= MOTION_THRESHOLD and in_active_hours() and now - last_llm >= MIN_LLM_INTERVAL:
-            last_llm = now
-            last_notify = react_and_speak(
-                client,
-                frame,
-                dx,
-                dy,
-                topic,
-                now,
-                last_notify,
-                args.dry_run,
-                save_dir=args.save_frames,
-            )
-            last_move = time.time()  # 反応後は巡回タイマーをリセット
 
-        time.sleep(0.5)
+        if ratio >= MOTION_THRESHOLD and in_active_hours():
+            last_motion_time = now
+            if not tracking and not args.no_neck:
+                tracking = True
+                print(f"[{datetime.now():%H:%M:%S}] 動きを追跡開始")
+
+            # 首はなるべく素早く動きの方向へ向け続ける(ガタつき防止に最低間隔だけ設ける)。
+            # 顔が見つかればそちらを優先し(下ばかり向くのを防ぐ)、見つからなければ
+            # 従来通り動きの重心を使う。
+            if not args.no_neck and now - last_track_move >= TRACK_UPDATE_INTERVAL:
+                face_offset = detect_face_offset(frame)
+                dx, dy = face_offset if face_offset is not None else (motion_dx, motion_dy)
+                neck.react_toward(dx, dy)
+                last_track_move = now
+
+            # AIへの問い合わせ・発話は従来通り30秒に1回まで(追跡中もその都度様子を話す)
+            if now - last_llm >= MIN_LLM_INTERVAL:
+                last_llm = now
+                last_notify = react_and_speak(
+                    client,
+                    frame,
+                    topic,
+                    now,
+                    last_notify,
+                    args.dry_run,
+                    save_dir=args.save_frames,
+                )
+        elif tracking and now - last_motion_time >= TRACK_LOSE_AFTER:
+            # 見失った: 正面に戻って巡回を再開する
+            print(f"[{datetime.now():%H:%M:%S}] 見失ったので正面に戻ります")
+            tracking = False
+            track_gray = None
+            baselines.clear()  # 巡回位置の基準フレームは時間が経って古くなっているので捨てる
+            neck.center()
+            last_move = time.time()
+
+        time.sleep(0.2 if tracking else 0.5)
 
 
 if __name__ == "__main__":
