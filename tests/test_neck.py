@@ -39,6 +39,11 @@ class TestMoveTo:
 
 
 class TestReactToward:
+    def setup_method(self):
+        # react_toward は「今向いている角度」からの相対移動なので、他のテストが
+        # 残した状態に影響されないよう、各テストの前に正面へリセットする。
+        neck.center()
+
     def test_positive_dx_turns_pan_below_center(self):
         # dxが+(画面右で動き検知)なら、首は左側(パン角を下げる)方向に向く
         pan, _ = neck.react_toward(dx=1.0, dy=0.0)
@@ -52,6 +57,14 @@ class TestReactToward:
         pan, tilt = neck.react_toward(dx=0.0, dy=0.0)
         assert pan == neck.PAN_CENTER
         assert tilt == neck.TILT_CENTER
+
+    def test_repeated_calls_keep_following_same_direction(self):
+        # 固定の正面を基準にすると、一度追いついて(dxが0に近づくと)また正面に
+        # 戻ろうとしてしまう。現在角度基準なら、同方向の動きが続く限りさらに
+        # 同方向へ進み続ける(戻ろうとしない)はず。
+        pan1, _ = neck.react_toward(dx=0.5, dy=0.0)
+        pan2, _ = neck.react_toward(dx=0.5, dy=0.0)
+        assert pan2 < pan1
 
 
 class TestCenter:
