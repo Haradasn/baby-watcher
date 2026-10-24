@@ -33,7 +33,9 @@ SCAN_POSITIONS = [
     (90, 105),  # うつむき
 ]
 
-SETTLE_SEC = 0.4  # 動かした後、静止するまで待つ時間(この間は動き検知を止める)
+SETTLE_SEC = 0.4  # ハードウェア未接続時(開発機)の疑似待ち時間
+STEP_DEG = 3  # move_toを細かく分割するときの1ステップあたりの角度
+STEP_DELAY = 0.015  # ステップ間の待ち時間(秒)。これで「カクッ」ではなく滑らかに動く
 
 # react_toward の振り幅。チルトは可動域(60度)がパン(120度)の半分なので、
 # 同じ「見た目の動き量」になるよう、パンより少し小さい値にしてあるが、
@@ -49,15 +51,25 @@ def _clamp(v, lo, hi):
 
 
 def move_to(pan, tilt):
-    """指定角度へ首を動かし、安定するまで待つ。戻り値: 実際にセットした角度"""
+    """指定角度へ首を動かす。戻り値: 実際にセットした角度
+
+    目標角度へ一気にジャンプして止まるのではなく、STEP_DEGずつ小刻みに
+    角度を更新しながら動かすことで、物理的な動きを滑らかにする
+    (副作用として、巡回の首振りも滑らかになる)。
+    """
     global _cur_pan, _cur_tilt
     pan = _clamp(pan, *PAN_RANGE)
     tilt = _clamp(tilt, *TILT_RANGE)
     if HAS_HW:
-        _kit.servo[PAN_CH].angle = pan
-        _kit.servo[TILT_CH].angle = tilt
+        start_pan, start_tilt = _cur_pan, _cur_tilt
+        steps = max(1, int(max(abs(pan - start_pan), abs(tilt - start_tilt)) / STEP_DEG))
+        for i in range(1, steps + 1):
+            _kit.servo[PAN_CH].angle = start_pan + (pan - start_pan) * i / steps
+            _kit.servo[TILT_CH].angle = start_tilt + (tilt - start_tilt) * i / steps
+            time.sleep(STEP_DELAY)
+    else:
+        time.sleep(SETTLE_SEC)  # ハードウェア未接続の開発機では、従来通りの疑似待ちだけ行う
     _cur_pan, _cur_tilt = pan, tilt
-    time.sleep(SETTLE_SEC)
     return pan, tilt
 
 

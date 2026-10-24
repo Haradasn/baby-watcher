@@ -45,7 +45,10 @@ ACTIVE_HOURS = None  # 例: (20, 7) で 20時〜翌7時だけ動かす。None �
 QUIET_HOURS = (21, 7)  # この時間帯は表情を消灯しTTSも喋らない(通知だけは送る)
 SCAN_DWELL = 8  # 自律巡回で1つのプリセット位置に留まる秒数
 TRACK_LOSE_AFTER = 3.0  # 動きが見えなくなってからこの秒数で追跡をやめて正面に戻る
-TRACK_UPDATE_INTERVAL = 0.3  # 追跡中に首を振り直す最短間隔(秒)。短すぎるとサーボがガタつく
+TRACK_UPDATE_INTERVAL = 0.1  # 追跡中に首を振り直す最短間隔(秒)。move_to自体が滑らかに
+# 分割して動くようになったので、ここは「止まっている時間」を減らすために短めにする
+TRACK_SMOOTH = 0.4  # 検出結果のなまし係数(0〜1)。小さいほど滑らかだが反応は遅れる
+FACE_CHECK_INTERVAL = 0.3  # 顔検出(YuNet)は重いのでこの間隔でのみ実行し、結果を使い回す
 
 # カメラを物理的に90度傾けて設置した場合(リボンケーブルの取り回しのためなど)、
 # ここでソフト的に補正する。0/90/180/270 のいずれか。値は env で上書き可能:
@@ -81,12 +84,19 @@ AIが画像を解析した結果を読み上げるような言い方(服の色�
 
 {person_section}
 
+自然に気づくことのヒント(画像から見えた状況に応じて、下記のような角度から話しかけてください):
+- 誰が来たか/誰もいないか(パパ、ママ、知らない人)
+- その人が何をしているか(抱っこしてる、あやしてる、こっちを見てる、作業してる、通り過ぎただけ)
+- 赤ちゃん自身の様子(手足が動いてる、静かにしてる、眠そう)
+- 場の空気(静か、賑やか、安心できる、ちょっと慌ただしい)
+- さっきまでと変わったこと(新しく誰か来た、いなくなった、様子が変わった)
+
 良い例(自然な話しかけ):
 - パパだ、来てくれたね
 - ママがこっち見てるよ、嬉しいね
-- だれか来たね、安心していいよ
-- 静かだね、ゆっくりしてていいよ
 - あやしてもらってるね、よかったね
+- だれもいないけど静かだね、安心していいよ
+- さっきの人、行っちゃったね
 
 悪い例(AIっぽい実況、禁止):
 - 天井のライトが明るいね
@@ -94,7 +104,7 @@ AIが画像を解析した結果を読み上げるような言い方(服の色�
 - 青いシャツの大人の人が画面の右側にいるよ
 - カーテンが開いていて部屋が明るいよ
 
-迷ったら短く・シンプルに。無理に細かい描写を付け足さないこと。同じ言い回しの使い回しは避けて、自然に言い方を変えてください。
+迷ったら短く・シンプルに。無理に細かい描写を付け足さないこと。同じ場面でも、毎回違う角度・違う言い回しで話しかけてください。決まり文句の使い回しは避けること。
 
 notifyの判断: 赤ちゃんに何か伝えられることがあればtrue。伝えることが特になければfalse。
 emotionは状況に合わせて次から選ぶ: neutral, happy, surprised, sleepy, curious
@@ -366,6 +376,9 @@ def main():
     last_motion_time = 0.0
     last_track_move = 0.0
     track_gray = None
+    smoothed_dx = smoothed_dy = 0.0  # 検出結果のなまし値(フレームごとのブレを抑える)
+    last_face_check = 0.0
+    cached_face_offset = None  # 顔検出は重いので毎更新ではなく間引いて実行し、結果を使い回す
 
     while True:
         pos = neck.current_position()
@@ -400,15 +413,24 @@ def main():
             last_motion_time = now
             if not tracking and not args.no_neck:
                 tracking = True
+                smoothed_dx = smoothed_dy = 0.0  # 新しい追跡対象なので、なましをリセット
+                last_face_check = 0.0
+                cached_face_offset = None
                 print(f"[{datetime.now():%H:%M:%S}] 動きを追跡開始")
 
             # 首はなるべく素早く動きの方向へ向け続ける(ガタつき防止に最低間隔だけ設ける)。
-            # 顔が見つかればそちらを優先し(下ばかり向くのを防ぐ)、見つからなければ
-            # 従来通り動きの重心を使う。
+            # 顔検出(YuNet)は重い処理なので毎回は実行せず、FACE_CHECK_INTERVALごとに
+            # 間引いて実行し、結果をキャッシュして使い回す(そうしないとCPUが張り付いて
+            # サーボを滑らかに動かすためのステップ間隔(STEP_DELAY)自体がブレてしまう)。
+            # サーボの更新自体はTRACK_UPDATE_INTERVALごとに細かく行う。
             if not args.no_neck and now - last_track_move >= TRACK_UPDATE_INTERVAL:
-                face_offset = detect_face_offset(frame)
-                dx, dy = face_offset if face_offset is not None else (motion_dx, motion_dy)
-                neck.react_toward(dx, dy)
+                if now - last_face_check >= FACE_CHECK_INTERVAL:
+                    cached_face_offset = detect_face_offset(frame)
+                    last_face_check = now
+                raw_dx, raw_dy = cached_face_offset if cached_face_offset is not None else (motion_dx, motion_dy)
+                smoothed_dx += (raw_dx - smoothed_dx) * TRACK_SMOOTH
+                smoothed_dy += (raw_dy - smoothed_dy) * TRACK_SMOOTH
+                neck.react_toward(smoothed_dx, smoothed_dy)
                 last_track_move = now
 
             # AIへの問い合わせ・発話は従来通り30秒に1回まで(追跡中もその都度様子を話す)
@@ -432,7 +454,7 @@ def main():
             neck.center()
             last_move = time.time()
 
-        time.sleep(0.2 if tracking else 0.5)
+        time.sleep(0.03 if tracking else 0.5)
 
 
 if __name__ == "__main__":
