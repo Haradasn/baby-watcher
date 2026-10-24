@@ -45,6 +45,17 @@ ACTIVE_HOURS = None  # 例: (20, 7) で 20時〜翌7時だけ動かす。None �
 QUIET_HOURS = (21, 7)  # この時間帯は表情を消灯しTTSも喋らない(通知だけは送る)
 SCAN_DWELL = 8  # 自律巡回で1つのプリセット位置に留まる秒数
 
+# カメラを物理的に90度傾けて設置した場合(リボンケーブルの取り回しのためなど)、
+# ここでソフト的に補正する。0/90/180/270 のいずれか。値は env で上書き可能:
+#   export CAMERA_ROTATE=90
+# 正しい向きが分からない場合は --save-frames で保存された画像を見ながら調整する。
+CAMERA_ROTATE = int(os.environ.get("CAMERA_ROTATE", "0"))
+_ROTATE_CODES = {
+    90: cv2.ROTATE_90_CLOCKWISE,
+    180: cv2.ROTATE_180,
+    270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+}
+
 PAPA_HINT = os.environ.get("PAPA_HINT", "")
 MAMA_HINT = os.environ.get("MAMA_HINT", "")
 
@@ -90,6 +101,12 @@ emotionは状況に合わせて次から選ぶ: neutral, happy, surprised, sleep
 SYSTEM_PROMPT = _build_system_prompt()
 
 
+def _rotate(frame):
+    if frame is None or CAMERA_ROTATE == 0:
+        return frame
+    return cv2.rotate(frame, _ROTATE_CODES[CAMERA_ROTATE])
+
+
 def open_camera(use_picam: bool):
     if use_picam:
         from picamera2 import Picamera2
@@ -100,14 +117,14 @@ def open_camera(use_picam: bool):
         )
         cam.start()
         time.sleep(2)
-        return lambda: cam.capture_array()
+        return lambda: _rotate(cam.capture_array())
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         raise RuntimeError("カメラが開けません")
 
     def read():
         ok, frame = cap.read()
-        return frame if ok else None
+        return _rotate(frame) if ok else None
 
     return read
 
