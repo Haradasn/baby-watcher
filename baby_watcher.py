@@ -25,6 +25,7 @@ import base64
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import anthropic
@@ -38,8 +39,8 @@ import voice
 # ===== 調整用パラメータ =====
 MODEL = "claude-haiku-5-5"  # 安くて速いモデル。精度が足りなければ claude-sonnet-5-5
 MOTION_THRESHOLD = 0.005  # 画面の何割が変化したら「動いた」とみなすか (0.5%)
-MIN_LLM_INTERVAL = 30  # LLMに送る最短間隔(秒)。API代の節約
-MIN_NOTIFY_INTERVAL = 30  # 通知の最短間隔(秒)。語りかけ用途のため短め
+MIN_LLM_INTERVAL = 20  # LLMに送る最短間隔(秒)。API代の節約
+MIN_NOTIFY_INTERVAL = 20  # 通知の最短間隔(秒)。語りかけ用途のため短め
 IMAGE_WIDTH = 640  # 送る画像の幅。小さいほど安く、送る情報も減る
 ACTIVE_HOURS = None  # 例: (20, 7) で 20時〜翌7時だけ動かす。None なら常時
 QUIET_HOURS = (21, 7)  # この時間帯は表情を消灯しTTSも喋らない(通知だけは送る)
@@ -380,6 +381,10 @@ def main():
     last_face_check = 0.0
     cached_face_offset = None  # 顔検出は重いので毎更新ではなく間引いて実行し、結果を使い回す
 
+    # LLM判定・発話・通知は別スレッドで行う。API応答を待つ間も追跡ループ(首振り)を止めないため。
+    llm_pool = ThreadPoolExecutor(max_workers=1)
+    llm_future = None
+
     while True:
         pos = neck.current_position()
 
@@ -433,10 +438,18 @@ def main():
                 neck.react_toward(smoothed_dx, smoothed_dy)
                 last_track_move = now
 
-            # AIへの問い合わせ・発話は従来通り30秒に1回まで(追跡中もその都度様子を話す)
-            if now - last_llm >= MIN_LLM_INTERVAL:
+            # AIへの問い合わせ・発話は従来通り30秒に1回まで(追跡中もその都度様子を話す)。
+            # 前回の判定がまだ動いている間は新しく投げず、追跡は止めない。
+            if llm_future is not None and llm_future.done():
+                try:
+                    last_notify = llm_future.result()
+                except Exception as e:
+                    print(f"[{datetime.now():%H:%M:%S}] 判定処理エラー: {e}")
+                llm_future = None
+            if llm_future is None and now - last_llm >= MIN_LLM_INTERVAL:
                 last_llm = now
-                last_notify = react_and_speak(
+                llm_future = llm_pool.submit(
+                    react_and_speak,
                     client,
                     frame,
                     topic,
